@@ -1,0 +1,134 @@
+package cloudflare
+
+import "strings"
+
+func GenerateWorkerCode() string {
+	return `export default {
+  async scheduled(event, env, ctx) {
+    async function notify(message) {
+      if (!env.NOTIFICATION_CONFIG) return;
+      const config = JSON.parse(env.NOTIFICATION_CONFIG);
+
+      if (config.slackWebhook) {
+        await fetch(config.slackWebhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: message })
+        }).catch(() => {});
+      }
+
+      if (config.discordWebhook) {
+        await fetch(config.discordWebhook, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: message })
+        }).catch(() => {});
+      }
+    }
+
+    function shouldNotify(succeeded) {
+      if (!env.NOTIFICATION_CONFIG) return false;
+      const config = JSON.parse(env.NOTIFICATION_CONFIG);
+      if (config.failureOnly) return !succeeded;
+      return true;
+    }
+
+    try {
+      // Read refresh token from KV (fallback to env secret for initial run)
+      let refreshToken = await env.TOKEN_STORE.get('refresh_token');
+      if (!refreshToken) {
+        refreshToken = env.REFRESH_TOKEN;
+        if (!refreshToken) {
+          throw new Error('No refresh token available');
+        }
+      }
+
+      let tokenRes;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        tokenRes = await fetch('https://console.anthropic.com/v1/oauth/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+            client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
+          })
+        });
+        if (tokenRes.ok) break;
+        if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+      }
+
+      if (!tokenRes.ok) {
+        const errorBody = await tokenRes.text().catch(() => '');
+        throw new Error('Token refresh failed: ' + tokenRes.status + ' ' + errorBody);
+      }
+
+      const tokenData = await tokenRes.json();
+      const accessToken = tokenData.access_token;
+
+      // Persist rotated refresh token for next invocation
+      if (tokenData.refresh_token) {
+        await env.TOKEN_STORE.put('refresh_token', tokenData.refresh_token);
+      }
+
+      const apiRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + accessToken,
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,prompt-caching-scope-2026-01-05',
+          'user-agent': 'claude-cli/2.1.80 (external, cli)',
+          'x-app': 'cli',
+          'x-anthropic-billing-header': 'cc_version=2.1.80.claude-sonnet-4-20250514; cc_entrypoint=cli; cch=00000;',
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 128,
+          system: [{ type: 'text', text: 'You are Claude Code, Anthropic\u0027s official CLI for Claude.' }],
+          messages: [{ role: 'user', content: 'ping' }]
+        })
+      });
+
+      if (!apiRes.ok) {
+        const errorBody = await apiRes.text().catch(() => '');
+        throw new Error('Claude API call failed: ' + apiRes.status + ' ' + errorBody);
+      }
+
+      if (shouldNotify(true)) {
+        const now = new Date().toLocaleString('en-US', { timeZone: env.TIMEZONE || 'UTC' });
+        await notify('TokFresh: Successfully refreshed at ' + now);
+      }
+
+      console.log('Token timer refreshed successfully');
+    } catch (error) {
+      console.error('Worker error:', error.message);
+
+      if (shouldNotify(false)) {
+        const now = new Date().toLocaleString('en-US', { timeZone: env.TIMEZONE || 'UTC' });
+        await notify('TokFresh: Failed at ' + now + ': ' + error.message);
+      }
+
+      throw error;
+    }
+  }
+};`
+}
+
+const testFetchHandler = `
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    if (url.pathname === '/__test') {
+      try {
+        await this.scheduled({}, env, ctx);
+        return new Response('ok');
+      } catch (e) {
+        return new Response('error: ' + e.message, { status: 500 });
+      }
+    }
+    return new Response('not found', { status: 404 });
+  },`
+
+func GenerateTestWorkerCode() string {
+	return strings.Replace(GenerateWorkerCode(), "export default {", "export default {"+testFetchHandler, 1)
+}

@@ -1,0 +1,68 @@
+version: 2
+project_name: tokfresh
+
+builds:
+  - id: tokfresh
+    main: ./
+    binary: tokfresh
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/stevejkang/tokfresh-cli/cmd.Version={{.Version}}
+      - -X github.com/stevejkang/tokfresh-cli/cmd.Commit={{.ShortCommit}}
+      - -X github.com/stevejkang/tokfresh-cli/cmd.Date={{.CommitDate}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: unix
+    builds: [tokfresh]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE*, README*]
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+brews:
+  - name: tokfresh
+    directory: Formula
+    homepage: "https://github.com/stevejkang/tokfresh-cli"
+    description: "Automate your Claude token reset timing via Cloudflare Workers"
+    license: MIT
+    repository:
+      owner: stevejkang
+      name: homebrew-tap
+      branch: main
+    commit_author:
+      name: tokfresh-bot
+      email: bot@users.noreply.github.com
+    test: |
+      system "#{bin}/tokfresh", "version"
+    skip_upload: auto
+
+scoops:
+  - name: tokfresh
+    homepage: "https://github.com/stevejkang/tokfresh-cli"
+    description: "Automate your Claude token reset timing via Cloudflare Workers"
+    license: MIT
+    repository:
+      owner: stevejkang
+      name: scoop-bucket
+      branch: main
+    skip_upload: auto
+
+changelog:
+  sort: asc
+  use: github-native
+
+release:
+  prerelease: auto

@@ -1,2 +1,34 @@
 # macOS
 .DS_Store
+
+# Go build output
+/dist/
+*.exe
+/tokfresh
+
+# Go tooling
+vendor/
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# AI / session files
+docs/plans
+AGENTS.md
+findings.md
+progress.md
+task_plan.md
+TODO.md
+HISTORY.md
