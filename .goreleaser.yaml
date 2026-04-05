@@ -21,7 +21,7 @@ builds:
 
 archives:
   - id: unix
-    builds: [tokfresh]
+    ids: [tokfresh]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
     format_overrides:
