@@ -3,6 +3,7 @@ package config_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -122,8 +123,8 @@ func TestRemoveInstance(t *testing.T) {
 	setupTestDir(t)
 
 	// Add two instances
-	config.AddInstance(config.Instance{Name: "keep", CloudflareAccountID: "acc"})
-	config.AddInstance(config.Instance{Name: "remove", CloudflareAccountID: "acc"})
+	_ = config.AddInstance(config.Instance{Name: "keep", CloudflareAccountID: "acc"})
+	_ = config.AddInstance(config.Instance{Name: "remove", CloudflareAccountID: "acc"})
 
 	if err := config.RemoveInstance("remove"); err != nil {
 		t.Fatal(err)
@@ -153,8 +154,8 @@ func TestRemoveInstance_NotFound(t *testing.T) {
 func TestGetInstance(t *testing.T) {
 	setupTestDir(t)
 
-	config.AddInstance(config.Instance{Name: "target", CloudflareAccountID: "acc", Schedule: "08:00"})
-	config.AddInstance(config.Instance{Name: "other", CloudflareAccountID: "acc", Schedule: "09:00"})
+	_ = config.AddInstance(config.Instance{Name: "target", CloudflareAccountID: "acc", Schedule: "08:00"})
+	_ = config.AddInstance(config.Instance{Name: "other", CloudflareAccountID: "acc", Schedule: "09:00"})
 
 	inst := config.GetInstance("target")
 	if inst == nil {
@@ -230,10 +231,11 @@ func TestAtomicWrite(t *testing.T) {
 		t.Error("temp file should not exist after save")
 	}
 
-	// Verify permissions (should be 0600)
-	info, _ := os.Stat(config.Path())
-	if info.Mode().Perm() != 0o600 {
-		t.Errorf("expected permissions 0600, got %o", info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		info, _ := os.Stat(config.Path())
+		if info.Mode().Perm() != 0o600 {
+			t.Errorf("expected permissions 0600, got %o", info.Mode().Perm())
+		}
 	}
 
 	// Verify directory exists
@@ -246,7 +248,7 @@ func TestAtomicWrite(t *testing.T) {
 func TestDefaultAccountIDSetOnFirstInstance(t *testing.T) {
 	setupTestDir(t)
 
-	config.AddInstance(config.Instance{
+	_ = config.AddInstance(config.Instance{
 		Name:                "first",
 		CloudflareAccountID: "first-acc",
 	})
@@ -257,7 +259,7 @@ func TestDefaultAccountIDSetOnFirstInstance(t *testing.T) {
 	}
 
 	// Adding second instance should not change default
-	config.AddInstance(config.Instance{
+	_ = config.AddInstance(config.Instance{
 		Name:                "second",
 		CloudflareAccountID: "second-acc",
 	})

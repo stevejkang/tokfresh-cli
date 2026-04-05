@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -98,13 +99,9 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("update cancelled: %w", err)
 	}
 
-	auth, err := resolveCloudflareAuthAuto()
+	auth, err := ensureAuthForInstance(inst)
 	if err != nil {
 		return err
-	}
-
-	if auth.AccountID == "" {
-		auth.AccountID = inst.CloudflareAccountID
 	}
 
 	slots := schedule.Calculate(startTime)
@@ -222,4 +219,45 @@ func resolveCloudflareAuthAuto() (*cloudflare.AuthResult, error) {
 		return nil, fmt.Errorf("API token is required")
 	}
 	return &cloudflare.AuthResult{Token: token, Source: "manual"}, nil
+}
+
+func ensureAuthForInstance(inst *config.Instance) (*cloudflare.AuthResult, error) {
+	auth, err := resolveCloudflareAuthAuto()
+	if err != nil {
+		return nil, err
+	}
+
+	if auth.AccountID == "" {
+		auth.AccountID = inst.CloudflareAccountID
+	}
+
+	if err := cloudflare.EnsureAccountAccess(auth.Token, inst.CloudflareAccountID); err != nil {
+		if errors.Is(err, cloudflare.ErrUnauthorized) {
+			accountLabel := inst.CloudflareAccountName
+			if accountLabel == "" {
+				accountLabel = inst.CloudflareAccountID
+			}
+
+			fmt.Println()
+			fmt.Printf("  %s\n", ui.ErrorStyle.Render(
+				fmt.Sprintf("✗ This worker belongs to '%s' but your current credentials cannot access it.", accountLabel)))
+			fmt.Println()
+
+			switch auth.Source {
+			case "wrangler":
+				fmt.Println(ui.MutedStyle.Render("  Switch to the correct account and try again:"))
+				fmt.Println(ui.MutedStyle.Render("    wrangler login"))
+			case "env":
+				fmt.Println(ui.MutedStyle.Render("  Set CLOUDFLARE_API_TOKEN to a token for that account and try again."))
+			default:
+				fmt.Println(ui.MutedStyle.Render("  Provide a token with access to that account."))
+			}
+			fmt.Println()
+
+			return nil, fmt.Errorf("account access denied for '%s'", accountLabel)
+		}
+		return nil, err
+	}
+
+	return auth, nil
 }

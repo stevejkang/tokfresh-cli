@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/charmbracelet/log"
@@ -46,47 +47,97 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	type skippedInstance struct {
+		Name        string
+		AccountName string
+	}
+
+	var accessible []config.Instance
+	var inaccessible []skippedInstance
+
+	for _, inst := range instances {
+		accountID := inst.CloudflareAccountID
+		if accountID == "" {
+			accessible = append(accessible, inst)
+			continue
+		}
+		if checkErr := cloudflare.EnsureAccountAccess(auth.Token, accountID); checkErr != nil {
+			if errors.Is(checkErr, cloudflare.ErrUnauthorized) {
+				label := inst.CloudflareAccountName
+				if label == "" {
+					label = accountID
+				}
+				inaccessible = append(inaccessible, skippedInstance{Name: inst.Name, AccountName: label})
+			} else {
+				log.Warn("account access check failed", "worker", inst.Name, "error", checkErr)
+				accessible = append(accessible, inst)
+			}
+		} else {
+			accessible = append(accessible, inst)
+		}
+	}
+
 	workerCode := cloudflare.GenerateWorkerCode()
 	upgraded := 0
 	failed := 0
 
-	fmt.Println()
-	fmt.Printf("  %s\n", ui.BoldStyle.Render(fmt.Sprintf("Upgrading workers to TokFresh %s template...", Version)))
+	if len(accessible) > 0 {
+		fmt.Println()
+		fmt.Printf("  %s\n", ui.BoldStyle.Render(fmt.Sprintf("Upgrading workers to TokFresh %s template...", Version)))
 
-	for _, inst := range instances {
-		fmt.Printf("\n  %s\n", inst.Name)
+		for _, inst := range accessible {
+			fmt.Printf("\n  %s\n", inst.Name)
 
-		accountID := auth.AccountID
-		if accountID == "" {
-			accountID = inst.CloudflareAccountID
+			accountID := inst.CloudflareAccountID
+			if accountID == "" {
+				accountID = auth.AccountID
+			}
+
+			kvTitle := fmt.Sprintf("tokfresh-tokens-%s", inst.Name)
+			nsID, findErr := cloudflare.FindKV(accountID, auth.Token, kvTitle)
+			if findErr != nil {
+				fmt.Printf("    %s KV namespace not found: %v\n", ui.ErrorStyle.Render("✗"), findErr)
+				failed++
+				continue
+			}
+			log.Debug("found KV namespace", "title", kvTitle, "id", nsID)
+
+			if uploadErr := cloudflare.UploadWorker(accountID, auth.Token, inst.Name, workerCode, nsID); uploadErr != nil {
+				fmt.Printf("    %s Upload failed: %v\n", ui.ErrorStyle.Render("✗"), uploadErr)
+				failed++
+				continue
+			}
+			fmt.Printf("    %s Worker code updated\n", ui.SuccessStyle.Render("✓"))
+			fmt.Printf("    %s Cron schedule unchanged\n", ui.SuccessStyle.Render("✓"))
+			upgraded++
 		}
-
-		// Find existing KV namespace (don't create new one)
-		kvTitle := fmt.Sprintf("tokfresh-tokens-%s", inst.Name)
-		nsID, findErr := cloudflare.FindKV(accountID, auth.Token, kvTitle)
-		if findErr != nil {
-			fmt.Printf("    %s KV namespace not found: %v\n", ui.ErrorStyle.Render("✗"), findErr)
-			failed++
-			continue
-		}
-		log.Debug("found KV namespace", "title", kvTitle, "id", nsID)
-
-		// Re-upload worker code with existing KV binding
-		if uploadErr := cloudflare.UploadWorker(accountID, auth.Token, inst.Name, workerCode, nsID); uploadErr != nil {
-			fmt.Printf("    %s Upload failed: %v\n", ui.ErrorStyle.Render("✗"), uploadErr)
-			failed++
-			continue
-		}
-		fmt.Printf("    %s Worker code updated\n", ui.SuccessStyle.Render("✓"))
-		fmt.Printf("    %s Cron schedule unchanged\n", ui.SuccessStyle.Render("✓"))
-		upgraded++
 	}
 
 	fmt.Println()
-	if failed > 0 {
-		fmt.Printf("  Done! %d worker(s) upgraded, %d failed.\n", upgraded, failed)
-	} else {
-		fmt.Printf("  %s %d worker(s) upgraded.\n", ui.SuccessStyle.Render("Done!"), upgraded)
+	if upgraded > 0 || failed > 0 {
+		if failed > 0 {
+			fmt.Printf("  Done! %d worker(s) upgraded, %d failed.\n", upgraded, failed)
+		} else {
+			fmt.Printf("  %s %d worker(s) upgraded.\n", ui.SuccessStyle.Render("Done!"), upgraded)
+		}
+	}
+
+	if len(inaccessible) > 0 {
+		fmt.Println()
+		fmt.Printf("  %s\n", ui.ErrorStyle.Render("⚠ The following workers could not be upgraded (different account):"))
+		for _, s := range inaccessible {
+			fmt.Printf("    • %s  (%s)\n", s.Name, s.AccountName)
+		}
+		fmt.Println()
+
+		switch auth.Source {
+		case "wrangler":
+			fmt.Println(ui.MutedStyle.Render("  Switch to that account and run again:"))
+			fmt.Println(ui.MutedStyle.Render("    wrangler login && tokfresh upgrade"))
+		case "env":
+			fmt.Println(ui.MutedStyle.Render("  Set CLOUDFLARE_API_TOKEN to a token for that account and run `tokfresh upgrade` again."))
+		}
+		fmt.Println()
 	}
 
 	return nil

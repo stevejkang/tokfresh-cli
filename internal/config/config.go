@@ -15,15 +15,16 @@ import (
 
 // Instance represents a single TokFresh worker deployment.
 type Instance struct {
-	Name                string `json:"name"`
-	Label               string `json:"label,omitempty"`
-	CloudflareAccountID string `json:"cloudflareAccountId"`
-	Schedule            string `json:"schedule"`
-	Timezone            string `json:"timezone"`
-	CronExpression      string `json:"cronExpression"`
-	NotificationType    string `json:"notificationType,omitempty"`
-	CreatedAt           string `json:"createdAt"`
-	UpdatedAt           string `json:"updatedAt"`
+	Name                  string `json:"name"`
+	Label                 string `json:"label,omitempty"`
+	CloudflareAccountID   string `json:"cloudflareAccountId"`
+	CloudflareAccountName string `json:"cloudflareAccountName,omitempty"`
+	Schedule              string `json:"schedule"`
+	Timezone              string `json:"timezone"`
+	CronExpression        string `json:"cronExpression"`
+	NotificationType      string `json:"notificationType,omitempty"`
+	CreatedAt             string `json:"createdAt"`
+	UpdatedAt             string `json:"updatedAt"`
 }
 
 // Config represents the local TokFresh configuration file.
@@ -97,7 +98,7 @@ func Save(cfg *Config) error {
 	}
 	if err := os.Rename(tmpPath, Path()); err != nil {
 		// Clean up temp file on rename failure
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 

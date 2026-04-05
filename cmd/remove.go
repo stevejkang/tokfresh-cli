@@ -52,20 +52,39 @@ func runRemove(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	auth, err := resolveCloudflareAuthAuto()
-	if err != nil {
-		return err
+	auth, authErr := ensureAuthForInstance(inst)
+
+	cfDeleteOK := false
+	if authErr == nil {
+		deleteErr := ui.RunWithSpinnerFullscreen("Deleting worker from Cloudflare...", func() error {
+			return cloudflare.DeleteWorker(auth.AccountID, auth.Token, name)
+		})
+		if deleteErr != nil {
+			log.Warn("failed to delete worker from Cloudflare", "error", deleteErr)
+		} else {
+			cfDeleteOK = true
+		}
 	}
 
-	if auth.AccountID == "" {
-		auth.AccountID = inst.CloudflareAccountID
-	}
+	if !cfDeleteOK {
+		ui.ExitAltScreen()
 
-	err = ui.RunWithSpinnerFullscreen("Deleting worker from Cloudflare...", func() error {
-		return cloudflare.DeleteWorker(auth.AccountID, auth.Token, name)
-	})
-	if err != nil {
-		log.Warn("failed to delete worker from Cloudflare", "error", err)
+		var removeLocal bool
+		localForm := huh.NewForm(huh.NewGroup(
+			huh.NewConfirm().
+				Title("Remove from local config only?").
+				Description("The worker could not be deleted from Cloudflare. Remove it from local config anyway?").
+				Affirmative("Yes").
+				Negative("No").
+				Value(&removeLocal),
+		))
+		localForm.WithTheme(ui.TokFreshTheme())
+		if err := localForm.Run(); err != nil || !removeLocal {
+			fmt.Println()
+			fmt.Println(ui.MutedStyle.Render("  Cancelled. No changes made."))
+			fmt.Println()
+			return nil
+		}
 	}
 
 	if removeErr := config.RemoveInstance(name); removeErr != nil {
@@ -75,11 +94,11 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	ui.ExitAltScreen()
 
 	fmt.Println()
-	if err != nil {
-		fmt.Println(ui.SuccessStyle.Render("  ✓ Instance removed from local config"))
-		fmt.Println(ui.MutedStyle.Render(fmt.Sprintf("  ⚠ Could not delete worker from Cloudflare: %v", err)))
-	} else {
+	if cfDeleteOK {
 		fmt.Println(ui.SuccessStyle.Render("  ✓ Removed!"))
+	} else {
+		fmt.Println(ui.SuccessStyle.Render("  ✓ Removed from local config"))
+		fmt.Println(ui.MutedStyle.Render("  ⚠ Worker may still exist on Cloudflare."))
 	}
 	fmt.Printf("  Worker %q deleted.\n", name)
 	fmt.Println()

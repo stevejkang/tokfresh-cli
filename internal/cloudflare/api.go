@@ -3,6 +3,7 @@ package cloudflare
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -13,10 +14,32 @@ import (
 	"github.com/charmbracelet/log"
 )
 
+var ErrUnauthorized = errors.New("unauthorized")
+
 // cfAPIBase is the Cloudflare API v4 base URL. It is a var so tests can override it.
 var cfAPIBase = "https://api.cloudflare.com/client/v4"
 
 var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+func EnsureAccountAccess(token, accountID string) error {
+	url := fmt.Sprintf("%s/accounts/%s", cfAPIBase, accountID)
+	resp, err := doRequest("GET", url, token, nil)
+	if err != nil {
+		return fmt.Errorf("account access check failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.ReadAll(resp.Body)
+		return ErrUnauthorized
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("account access check failed (%d): %s", resp.StatusCode, string(body))
+	}
+	_, _ = io.ReadAll(resp.Body)
+	return nil
+}
 
 func ConsoleURL(accountID, workerName string) string {
 	return fmt.Sprintf("https://dash.cloudflare.com/%s/workers/services/view/%s", accountID, workerName)
@@ -42,7 +65,7 @@ func VerifyToken(token string) (*VerifyResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("token verify request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("token verify response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
 	body, _ := io.ReadAll(resp.Body)
@@ -55,7 +78,7 @@ func VerifyToken(token string) (*VerifyResult, error) {
 		if userErr != nil {
 			return nil, fmt.Errorf("token verification failed: %w", userErr)
 		}
-		defer userResp.Body.Close()
+		defer func() { _ = userResp.Body.Close() }()
 		log.Debug("user endpoint response", "status", userResp.StatusCode, "elapsed", time.Since(start))
 
 		userBody, _ := io.ReadAll(userResp.Body)
@@ -84,14 +107,14 @@ func VerifyToken(token string) (*VerifyResult, error) {
 		userURL := fmt.Sprintf("%s/user", cfAPIBase)
 		userResp, userErr := doRequest("GET", userURL, token, nil)
 		if userErr == nil {
-			defer userResp.Body.Close()
+			defer func() { _ = userResp.Body.Close() }()
 			userBody, _ := io.ReadAll(userResp.Body)
 			var u struct {
 				Result struct {
 					Email string `json:"email"`
 				} `json:"result"`
 			}
-			json.Unmarshal(userBody, &u)
+			_ = json.Unmarshal(userBody, &u)
 			email = u.Result.Email
 		}
 	}
@@ -104,7 +127,7 @@ func VerifyToken(token string) (*VerifyResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("accounts request failed: %w", err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	log.Debug("accounts response", "status", resp2.StatusCode, "elapsed", time.Since(start))
 
 	body2, _ := io.ReadAll(resp2.Body)
@@ -150,7 +173,7 @@ func FindOrCreateKV(accountID, token, title string) (namespaceID string, err err
 	if err != nil {
 		return "", fmt.Errorf("KV namespace creation request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("KV create response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
 	body, _ := io.ReadAll(resp.Body)
@@ -183,7 +206,7 @@ func FindKV(accountID, token, title string) (namespaceID string, err error) {
 	if err != nil {
 		return "", fmt.Errorf("KV list request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("KV list response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
 	body, _ := io.ReadAll(resp.Body)
@@ -229,7 +252,7 @@ func WriteKVValue(accountID, token, nsID, key, value string) error {
 	if err != nil {
 		return fmt.Errorf("KV write request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("KV write response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
 	if resp.StatusCode != http.StatusOK {
@@ -300,7 +323,7 @@ func UploadWorker(accountID, token, workerName, code, kvNSID string) error {
 	if err != nil {
 		return fmt.Errorf("worker upload failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("worker upload response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
 	if resp.StatusCode != http.StatusOK {
@@ -326,7 +349,7 @@ func SetSchedule(accountID, token, workerName, cron string) error {
 	if err != nil {
 		return fmt.Errorf("schedule request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("schedule response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
 	if resp.StatusCode != http.StatusOK {
@@ -352,7 +375,7 @@ func SetSecret(accountID, token, workerName, name, value string) error {
 	if err != nil {
 		return fmt.Errorf("secret request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("secret response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
@@ -372,14 +395,21 @@ func DeleteWorker(accountID, token, workerName string) error {
 	if err != nil {
 		return fmt.Errorf("worker delete request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	log.Debug("worker delete response", "status", resp.StatusCode, "elapsed", time.Since(start))
 
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return nil
+	case http.StatusForbidden, http.StatusUnauthorized:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%w: %s", ErrUnauthorized, string(body))
+	default:
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("worker delete failed (%d): %s", resp.StatusCode, string(body))
 	}
-	return nil
 }
 
 // parseCFErrorCode extracts the first error code from a CF API error response.
@@ -427,7 +457,7 @@ func CreateTail(accountID, token, workerName string) (tailID, wsURL string, err 
 	if err != nil {
 		return "", "", fmt.Errorf("create tail request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
@@ -458,7 +488,7 @@ func DeleteTail(accountID, token, workerName, tailID string) error {
 	if err != nil {
 		return fmt.Errorf("delete tail request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

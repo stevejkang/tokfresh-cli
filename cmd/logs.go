@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
 	"github.com/stevejkang/tokfresh-cli/internal/cloudflare"
 	"github.com/stevejkang/tokfresh-cli/internal/config"
 	"github.com/stevejkang/tokfresh-cli/internal/ui"
-	"nhooyr.io/websocket"
 )
 
 var logsCmd = &cobra.Command{
@@ -54,17 +54,13 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return instanceNotFoundError(name)
 	}
 
-	auth, err := resolveCloudflareAuthAuto()
+	auth, err := ensureAuthForInstance(inst)
 	if err != nil {
 		return err
 	}
 
 	accountID := auth.AccountID
-	if accountID == "" {
-		accountID = inst.CloudflareAccountID
-	}
 
-	// Create tail session
 	fmt.Println()
 	fmt.Printf("  %s\n", ui.MutedStyle.Render(fmt.Sprintf("Tailing %s... (Ctrl+C to stop)", name)))
 	fmt.Println()
@@ -103,7 +99,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	if dialErr != nil {
 		return fmt.Errorf("WebSocket connection failed: %w", dialErr)
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	// Read and display events
 	for {

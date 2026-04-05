@@ -82,7 +82,7 @@ func TestExchangeCodeSuccess(t *testing.T) {
 		}
 
 		var body map[string]string
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		if body["grant_type"] != "authorization_code" {
 			t.Error("missing grant_type")
@@ -101,7 +101,7 @@ func TestExchangeCodeSuccess(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"access_token":  "at_test",
 			"refresh_token": "rt_test",
 		})

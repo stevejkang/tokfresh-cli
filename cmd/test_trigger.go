@@ -46,15 +46,12 @@ func runTest(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	auth, err := resolveCloudflareAuthAuto()
+	auth, err := ensureAuthForInstance(inst)
 	if err != nil {
 		return err
 	}
 
 	accountID := auth.AccountID
-	if accountID == "" {
-		accountID = inst.CloudflareAccountID
-	}
 
 	// Find existing KV namespace
 	kvTitle := fmt.Sprintf("tokfresh-tokens-%s", name)
@@ -88,7 +85,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 		fmt.Println(ui.ErrorStyle.Render(fmt.Sprintf("  ✗ Trigger failed: %v", triggerErr)))
 	} else {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode == http.StatusOK {
 			fmt.Println(ui.SuccessStyle.Render("  ✓ Worker executed successfully"))
 		} else {

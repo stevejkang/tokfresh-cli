@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,14 +20,14 @@ func TestVerifyToken(t *testing.T) {
 
 		switch {
 		case strings.Contains(r.URL.Path, "/tokens/verify"):
-			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+			_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 		case strings.Contains(r.URL.Path, "/user") && !strings.Contains(r.URL.Path, "/tokens"):
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": true,
 				"result":  map[string]string{"email": "test@example.com"},
 			})
 		case strings.Contains(r.URL.Path, "/accounts"):
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"result": []map[string]string{{"id": "acc123", "name": "Test Account"}},
 			})
 		}
@@ -54,14 +55,14 @@ func TestVerifyToken_OAuthFallback(t *testing.T) {
 		switch {
 		case strings.Contains(r.URL.Path, "/tokens/verify"):
 			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte(`{"success":false}`))
+			_, _ = w.Write([]byte(`{"success":false}`))
 		case strings.Contains(r.URL.Path, "/user") && !strings.Contains(r.URL.Path, "/tokens"):
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": true,
 				"result":  map[string]string{"email": "oauth@example.com"},
 			})
 		case strings.Contains(r.URL.Path, "/accounts"):
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"result": []map[string]string{{"id": "acc456", "name": "OAuth Account"}},
 			})
 		}
@@ -87,7 +88,7 @@ func TestVerifyToken_OAuthFallback(t *testing.T) {
 func TestVerifyToken_Failure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte(`{"success":false}`))
+		_, _ = w.Write([]byte(`{"success":false}`))
 	}))
 	defer server.Close()
 
@@ -104,7 +105,7 @@ func TestVerifyToken_Failure(t *testing.T) {
 func TestFindOrCreateKV_Existing(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "GET" && strings.Contains(r.URL.Path, "/kv/namespaces") {
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"result": []map[string]string{
 					{"id": "existing-ns", "title": "tokfresh-tokens-worker1"},
 				},
@@ -131,14 +132,14 @@ func TestFindOrCreateKV_Create(t *testing.T) {
 		switch {
 		case r.Method == "GET" && strings.Contains(r.URL.Path, "/kv/namespaces"):
 			// Return empty list
-			json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
 		case r.Method == "POST" && strings.Contains(r.URL.Path, "/kv/namespaces"):
 			var body map[string]string
-			json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			if body["title"] != "tokfresh-tokens-new-worker" {
 				t.Errorf("wrong title: %s", body["title"])
 			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"result": map[string]string{"id": "new-ns-id"},
 			})
 		}
@@ -160,7 +161,7 @@ func TestFindOrCreateKV_Create(t *testing.T) {
 
 func TestFindKV_NotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
 	}))
 	defer server.Close()
 
@@ -237,7 +238,7 @@ func TestUploadWorker_Multipart(t *testing.T) {
 func TestUploadWorker_Error10063(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(400)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"errors":  []map[string]interface{}{{"code": 10063, "message": "subdomain required"}},
 		})
@@ -302,7 +303,7 @@ func TestSetSecret_Format(t *testing.T) {
 		}
 
 		var body map[string]string
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 
 		// Verify "text" field (not "value")
 		if body["text"] != "secret-value" {
@@ -399,11 +400,11 @@ func TestDeploy_HappyPath(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "/tokens/verify"):
-			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+			_ = json.NewEncoder(w).Encode(map[string]bool{"success": true})
 		case strings.Contains(r.URL.Path, "/kv/namespaces") && r.Method == "GET":
-			json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
 		case strings.Contains(r.URL.Path, "/kv/namespaces") && r.Method == "POST":
-			json.NewEncoder(w).Encode(map[string]interface{}{"result": map[string]string{"id": "kv123"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"result": map[string]string{"id": "kv123"}})
 		case strings.Contains(r.URL.Path, "/values/"):
 			w.WriteHeader(http.StatusOK)
 		case strings.Contains(r.URL.Path, "/scripts/") && r.Method == "PUT" && !strings.Contains(r.URL.Path, "/schedules") && !strings.Contains(r.URL.Path, "/secrets"):
@@ -416,14 +417,14 @@ func TestDeploy_HappyPath(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/schedules"):
 			// Verify array body
 			var body []map[string]string
-			json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			if len(body) != 1 || body[0]["cron"] == "" {
 				t.Error("expected [{cron: ...}] array")
 			}
 			w.WriteHeader(http.StatusOK)
 		case strings.Contains(r.URL.Path, "/secrets"):
 			var body map[string]string
-			json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			if body["type"] != "secret_text" {
 				t.Error("expected type: secret_text")
 			}
@@ -465,14 +466,14 @@ func TestDeploy_Error10063(t *testing.T) {
 		requestCount++
 		switch {
 		case strings.Contains(r.URL.Path, "/kv/namespaces") && r.Method == "GET":
-			json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"result": []interface{}{}})
 		case strings.Contains(r.URL.Path, "/kv/namespaces") && r.Method == "POST":
-			json.NewEncoder(w).Encode(map[string]interface{}{"result": map[string]string{"id": "kv123"}})
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"result": map[string]string{"id": "kv123"}})
 		case strings.Contains(r.URL.Path, "/values/"):
 			w.WriteHeader(http.StatusOK)
 		case strings.Contains(r.URL.Path, "/scripts/") && r.Method == "PUT" && !strings.Contains(r.URL.Path, "/schedules") && !strings.Contains(r.URL.Path, "/secrets"):
 			w.WriteHeader(400)
-			json.NewEncoder(w).Encode(map[string]interface{}{
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": false,
 				"errors":  []map[string]interface{}{{"code": 10063, "message": "subdomain required"}},
 			})
@@ -501,5 +502,86 @@ func TestDeploy_Error10063(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "subdomain") {
 		t.Errorf("expected subdomain error, got: %v", err)
+	}
+}
+
+func TestEnsureAccountAccess_OK(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/accounts/acc123") {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+	}))
+	defer server.Close()
+
+	origBase := cfAPIBase
+	cfAPIBase = server.URL
+	defer func() { cfAPIBase = origBase }()
+
+	if err := EnsureAccountAccess("tok", "acc123"); err != nil {
+		t.Fatalf("expected nil, got: %v", err)
+	}
+}
+
+func TestEnsureAccountAccess_Forbidden(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+
+	origBase := cfAPIBase
+	cfAPIBase = server.URL
+	defer func() { cfAPIBase = origBase }()
+
+	err := EnsureAccountAccess("bad-token", "acc123")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized, got: %v", err)
+	}
+}
+
+func TestDeleteWorker_NotFound_IsSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"errors":  []map[string]interface{}{{"code": 10007, "message": "not found"}},
+		})
+	}))
+	defer server.Close()
+
+	origBase := cfAPIBase
+	cfAPIBase = server.URL
+	defer func() { cfAPIBase = origBase }()
+
+	err := DeleteWorker("acc", "tok", "nonexistent-worker")
+	if err != nil {
+		t.Fatalf("expected nil for 404, got: %v", err)
+	}
+}
+
+func TestDeleteWorker_Forbidden_ReturnsUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"errors":  []map[string]interface{}{{"code": 10000, "message": "Authentication error"}},
+		})
+	}))
+	defer server.Close()
+
+	origBase := cfAPIBase
+	cfAPIBase = server.URL
+	defer func() { cfAPIBase = origBase }()
+
+	err := DeleteWorker("acc", "bad-tok", "some-worker")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Errorf("expected ErrUnauthorized, got: %v", err)
 	}
 }

@@ -28,7 +28,7 @@ func Subscribe(email string) error {
 	if err != nil {
 		return fmt.Errorf("subscription request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Success           bool   `json:"success"`

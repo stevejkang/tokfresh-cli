@@ -61,7 +61,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	auth, err := resolveCloudflareAuth(result.CloudflareAuthMode)
 	if err != nil {
-		return fmt.Errorf("Cloudflare auth failed: %w", err)
+		return fmt.Errorf("cloudflare auth failed: %w", err)
 	}
 
 	var cfResult *cloudflare.VerifyResult
@@ -71,7 +71,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return verifyErr
 	})
 	if err != nil {
-		return fmt.Errorf("Cloudflare token verification failed: %w", err)
+		return fmt.Errorf("cloudflare token verification failed: %w", err)
 	}
 	auth.AccountID = cfResult.AccountID
 
@@ -122,11 +122,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	inst := config.Instance{
-		Name:                workerName,
-		CloudflareAccountID: auth.AccountID,
-		Schedule:            result.StartTime,
-		Timezone:            result.Timezone,
-		CronExpression:      cronExpr,
+		Name:                  workerName,
+		CloudflareAccountID:   auth.AccountID,
+		CloudflareAccountName: cfResult.AccountName,
+		Schedule:              result.StartTime,
+		Timezone:              result.Timezone,
+		CronExpression:        cronExpr,
 	}
 	if result.NotificationType != "none" {
 		inst.NotificationType = result.NotificationType

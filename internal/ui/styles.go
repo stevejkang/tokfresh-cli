@@ -41,7 +41,7 @@ func BrandHeader() string {
 var inAltScreen bool
 
 func EnterAltScreen() {
-	fmt.Fprint(os.Stdout, "\033[?1049h\033[H\033[2J")
+	_, _ = fmt.Fprint(os.Stdout, "\033[?1049h\033[H\033[2J")
 	inAltScreen = true
 }
 
@@ -49,18 +49,18 @@ func ExitAltScreen() {
 	if !inAltScreen {
 		return
 	}
-	fmt.Fprint(os.Stdout, "\033[?1049l")
+	_, _ = fmt.Fprint(os.Stdout, "\033[?1049l")
 	inAltScreen = false
 }
 
 func ClearScreen() {
-	fmt.Fprint(os.Stdout, "\033[H\033[2J")
+	_, _ = fmt.Fprint(os.Stdout, "\033[H\033[2J")
 }
 
 func ClearAndBrand() {
 	ClearScreen()
-	fmt.Fprintln(os.Stdout, BrandHeader())
-	fmt.Fprintln(os.Stdout)
+	_, _ = fmt.Fprintln(os.Stdout, BrandHeader())
+	_, _ = fmt.Fprintln(os.Stdout)
 }
 
 func TokFreshTheme() *huh.Theme {

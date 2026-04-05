@@ -50,16 +50,16 @@ func (m fullscreenSpinner) doAction() tea.Cmd {
 }
 
 func (m fullscreenSpinner) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg.(type) {
+	switch msg := msg.(type) {
 	case tickMsg:
 		m.frame++
 		return m, m.doTick()
 	case doneMsg:
 		m.done = true
-		m.err = msg.(doneMsg).err
+		m.err = msg.err
 		return m, tea.Quit
 	case tea.KeyMsg:
-		if msg.(tea.KeyMsg).String() == "ctrl+c" {
+		if msg.String() == "ctrl+c" {
 			m.err = fmt.Errorf("interrupted")
 			return m, tea.Quit
 		}
