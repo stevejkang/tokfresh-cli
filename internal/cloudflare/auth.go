@@ -158,3 +158,13 @@ func RunWranglerLogin() error {
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
+
+// RunWranglerLogout runs `wrangler logout` to clear stored credentials.
+func RunWranglerLogout() error {
+	log.Info("running wrangler logout")
+	cmd := exec.Command("wrangler", "logout")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}

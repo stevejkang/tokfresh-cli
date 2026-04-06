@@ -75,24 +75,61 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	auth.AccountID = cfResult.AccountID
 
-	cfLabel := cfResult.AccountName
-	if cfResult.Email != "" {
-		cfLabel += " (" + cfResult.Email + ")"
-	}
+	for {
+		cfLabel := cfResult.AccountName
+		if cfResult.Email != "" {
+			cfLabel += " (" + cfResult.Email + ")"
+		}
 
-	confirmCF := true
-	ui.ClearAndBrand()
-	cfForm := huh.NewForm(huh.NewGroup(
-		huh.NewConfirm().
-			Title("Deploy to this Cloudflare account?").
-			Description(cfLabel).
-			Affirmative("Yes").
-			Negative("No").
-			Value(&confirmCF),
-	))
-	cfForm.WithTheme(ui.TokFreshTheme())
-	if err := cfForm.Run(); err != nil || !confirmCF {
-		return fmt.Errorf("cancelled")
+		confirmCF := true
+		ui.ClearAndBrand()
+		cfForm := huh.NewForm(huh.NewGroup(
+			huh.NewConfirm().
+				Title("Deploy to this Cloudflare account?").
+				Description(cfLabel).
+				Affirmative("Yes").
+				Negative("Use different account").
+				Value(&confirmCF),
+		))
+		cfForm.WithTheme(ui.TokFreshTheme())
+		if err := cfForm.Run(); err != nil {
+			return fmt.Errorf("cancelled")
+		}
+
+		if confirmCF {
+			break
+		}
+
+		ui.ExitAltScreen()
+		fmt.Println(ui.MutedStyle.Render("  Switching Cloudflare account..."))
+		fmt.Println()
+		if err := cloudflare.RunWranglerLogout(); err != nil {
+			log.Debug("wrangler logout failed (may not have been logged in)", "error", err)
+		}
+		fmt.Println()
+		fmt.Println(ui.MutedStyle.Render("  Opening browser for Cloudflare login..."))
+		if err := cloudflare.RunWranglerLogin(); err != nil {
+			ui.EnterAltScreen()
+			return fmt.Errorf("wrangler login failed: %w", err)
+		}
+		ui.EnterAltScreen()
+
+		token, err := cloudflare.GetWranglerToken()
+		if err != nil {
+			return fmt.Errorf("wrangler token retrieval failed: %w", err)
+		}
+		auth.Token = token
+		auth.Source = "wrangler"
+
+		err = ui.RunWithSpinnerFullscreen("Verifying Cloudflare account...", func() error {
+			var verifyErr error
+			cfResult, verifyErr = cloudflare.VerifyToken(auth.Token)
+			return verifyErr
+		})
+		if err != nil {
+			return fmt.Errorf("cloudflare token verification failed: %w", err)
+		}
+		auth.AccountID = cfResult.AccountID
 	}
 
 	slots := schedule.Calculate(result.StartTime)
