@@ -42,7 +42,7 @@ func EnsureAccountAccess(token, accountID string) error {
 }
 
 func ConsoleURL(accountID, workerName string) string {
-	return fmt.Sprintf("https://dash.cloudflare.com/%s/workers/services/view/%s", accountID, workerName)
+	return fmt.Sprintf("https://dash.cloudflare.com/%s/workers/services/view/%s/production", accountID, workerName)
 }
 
 type VerifyResult struct {
