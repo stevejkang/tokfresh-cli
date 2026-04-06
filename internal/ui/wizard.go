@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/stevejkang/tokfresh-cli/internal/cloudflare"
+	"github.com/stevejkang/tokfresh-cli/internal/config"
 	"github.com/stevejkang/tokfresh-cli/internal/schedule"
 )
 
@@ -197,8 +198,14 @@ func RunSetupWizard(detectedTimezone, authURL string) (*WizardResult, error) {
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Worker name").
-				Description("A unique name for this scheduler. Leave empty for auto-generated.").
+				Description("A unique name for this worker. Leave empty for auto-generated. (e.g. tokfresh-scheduler-a1b2c3)").
 				Placeholder("tokfresh-work, tokfresh-personal ...").
+				Validate(func(s string) error {
+					if s == "" {
+						return nil
+					}
+					return config.ValidateWorkerName(s)
+				}).
 				Value(&result.WorkerName),
 		),
 

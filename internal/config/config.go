@@ -7,11 +7,26 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 	"time"
 
 	"github.com/charmbracelet/log"
 )
+
+var validWorkerName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,61}[A-Za-z0-9]$`)
+
+func ValidateWorkerName(name string) error {
+	if len(name) < 2 {
+		return fmt.Errorf("worker name must be at least 2 characters")
+	}
+	if len(name) > 63 {
+		return fmt.Errorf("worker name must be 63 characters or less")
+	}
+	if !validWorkerName.MatchString(name) {
+		return fmt.Errorf("worker name can only contain letters, digits, and hyphens (no underscores or leading/trailing hyphens)")
+	}
+	return nil
+}
 
 // Instance represents a single TokFresh worker deployment.
 type Instance struct {
@@ -177,15 +192,8 @@ func ListInstances() []Instance {
 	return cfg.Instances
 }
 
-// GenerateWorkerName creates a worker name with optional user suffix.
-// If suffix is empty, generates a random 6-character hex string.
-// Returns format: "tokfresh-scheduler-{suffix}"
-func GenerateWorkerName(suffix string) string {
-	suffix = strings.TrimSpace(suffix)
-	if suffix == "" {
-		b := make([]byte, 3)
-		rand.Read(b)
-		suffix = hex.EncodeToString(b)
-	}
-	return fmt.Sprintf("tokfresh-scheduler-%s", suffix)
+func GenerateWorkerName() string {
+	b := make([]byte, 3)
+	rand.Read(b)
+	return fmt.Sprintf("tokfresh-scheduler-%s", hex.EncodeToString(b))
 }

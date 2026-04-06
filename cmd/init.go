@@ -41,12 +41,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("setup wizard cancelled: %w", err)
 	}
 
-	// Resolve worker name
 	workerName := result.WorkerName
 	if workerName == "" {
-		workerName = config.GenerateWorkerName("")
-	} else {
-		workerName = config.GenerateWorkerName(workerName)
+		workerName = config.GenerateWorkerName()
 	}
 
 	var tokenResp *claude.TokenResponse

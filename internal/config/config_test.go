@@ -176,28 +176,20 @@ func TestGetInstance_NotFound(t *testing.T) {
 }
 
 func TestGenerateWorkerName(t *testing.T) {
-	tests := []struct {
-		suffix string
-		prefix string
-	}{
-		{"my-claude", "tokfresh-scheduler-my-claude"},
-		{"", "tokfresh-scheduler-"},
-		{"  work  ", "tokfresh-scheduler-work"},
+	name := config.GenerateWorkerName()
+	if !strings.HasPrefix(name, "tokfresh-scheduler-") {
+		t.Errorf("GenerateWorkerName() = %q, expected prefix tokfresh-scheduler-", name)
 	}
-
-	for _, tt := range tests {
-		name := config.GenerateWorkerName(tt.suffix)
-		if !strings.HasPrefix(name, tt.prefix) {
-			t.Errorf("GenerateWorkerName(%q) = %q, expected prefix %q", tt.suffix, name, tt.prefix)
-		}
+	if len(name) != len("tokfresh-scheduler-")+6 {
+		t.Errorf("expected 6-char hex suffix, got %q", name)
 	}
 }
 
 func TestGenerateWorkerNameRandomness(t *testing.T) {
-	name1 := config.GenerateWorkerName("")
-	name2 := config.GenerateWorkerName("")
+	name1 := config.GenerateWorkerName()
+	name2 := config.GenerateWorkerName()
 	if name1 == name2 {
-		t.Error("expected unique names for empty suffix")
+		t.Error("expected unique names")
 	}
 }
 
