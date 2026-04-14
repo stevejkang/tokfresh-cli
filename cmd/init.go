@@ -159,6 +159,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Name:                  workerName,
 		CloudflareAccountID:   auth.AccountID,
 		CloudflareAccountName: cfResult.AccountName,
+		CloudflareEmail:       cfResult.Email,
 		Schedule:              result.StartTime,
 		Timezone:              result.Timezone,
 		CronExpression:        cronExpr,
