@@ -238,25 +238,101 @@ func ensureAuthForInstance(inst *config.Instance) (*cloudflare.AuthResult, error
 				accountLabel = inst.CloudflareAccountID
 			}
 
-			fmt.Println()
-			fmt.Printf("  %s\n", ui.ErrorStyle.Render(
-				fmt.Sprintf("✗ This worker belongs to '%s' but your current credentials cannot access it.", accountLabel)))
-			fmt.Println()
-
-			switch auth.Source {
-			case "wrangler":
-				fmt.Println(ui.MutedStyle.Render("  Switch to the correct account and try again:"))
-				fmt.Println(ui.MutedStyle.Render("    wrangler login"))
-			case "env":
-				fmt.Println(ui.MutedStyle.Render("  Set CLOUDFLARE_API_TOKEN to a token for that account and try again."))
-			default:
-				fmt.Println(ui.MutedStyle.Render("  Provide a token with access to that account."))
+			mismatchMsg := fmt.Sprintf("This worker belongs to account '%s'", accountLabel)
+			if inst.CloudflareEmail != "" {
+				mismatchMsg += fmt.Sprintf(" (%s)", inst.CloudflareEmail)
 			}
+			mismatchMsg += " but your current credentials cannot access it."
+
+			fmt.Println()
+			fmt.Printf("  %s\n", ui.ErrorStyle.Render("✗ "+mismatchMsg))
 			fmt.Println()
 
-			return nil, fmt.Errorf("account access denied for '%s'", accountLabel)
+			if auth.Source == "env" {
+				fmt.Println(ui.MutedStyle.Render("  Set CLOUDFLARE_API_TOKEN to a token for that account and try again."))
+				fmt.Println()
+				return nil, fmt.Errorf("account access denied for '%s'", accountLabel)
+			}
+
+			for {
+				switchAccount := false
+				form := huh.NewForm(huh.NewGroup(
+					huh.NewConfirm().
+						Title("Switch to the correct account?").
+						Description(mismatchMsg).
+						Affirmative("Yes").
+						Negative("No").
+						Value(&switchAccount),
+				))
+				form.WithTheme(ui.TokFreshTheme())
+				if err := form.Run(); err != nil {
+					return nil, fmt.Errorf("cancelled")
+				}
+
+				if !switchAccount {
+					switch auth.Source {
+					case "wrangler":
+						fmt.Println(ui.MutedStyle.Render("  Switch to the correct account and try again:"))
+						fmt.Println(ui.MutedStyle.Render("    wrangler login"))
+					default:
+						fmt.Println(ui.MutedStyle.Render("  Provide a token with access to that account."))
+					}
+					fmt.Println()
+					return nil, fmt.Errorf("account access denied for '%s'", accountLabel)
+				}
+
+				ui.ExitAltScreen()
+				fmt.Println(ui.MutedStyle.Render("  Switching Cloudflare account..."))
+				fmt.Println()
+				if logoutErr := cloudflare.RunWranglerLogout(); logoutErr != nil {
+					log.Debug("wrangler logout failed (may not have been logged in)", "error", logoutErr)
+				}
+				fmt.Println()
+				fmt.Println(ui.MutedStyle.Render("  Opening browser for Cloudflare login..."))
+				if loginErr := cloudflare.RunWranglerLogin(); loginErr != nil {
+					ui.EnterAltScreen()
+					return nil, fmt.Errorf("wrangler login failed: %w", loginErr)
+				}
+				ui.EnterAltScreen()
+
+				token, tokenErr := cloudflare.GetWranglerToken()
+				if tokenErr != nil {
+					return nil, fmt.Errorf("wrangler token retrieval failed: %w", tokenErr)
+				}
+				auth.Token = token
+				auth.Source = "wrangler"
+
+				if accessErr := cloudflare.EnsureAccountAccess(auth.Token, inst.CloudflareAccountID); accessErr != nil {
+					if errors.Is(accessErr, cloudflare.ErrUnauthorized) {
+						fmt.Println()
+						fmt.Printf("  %s\n", ui.ErrorStyle.Render("✗ Still cannot access the required account. Try again with a different account."))
+						fmt.Println()
+						continue
+					}
+					return nil, accessErr
+				}
+
+				if inst.CloudflareEmail == "" {
+					if verifyResult, verifyErr := cloudflare.VerifyToken(auth.Token); verifyErr == nil && verifyResult.Email != "" {
+						if cfg, loadErr := config.Load(); loadErr == nil {
+							for i := range cfg.Instances {
+								if cfg.Instances[i].Name == inst.Name {
+									cfg.Instances[i].CloudflareEmail = verifyResult.Email
+									if saveErr := config.Save(cfg); saveErr != nil {
+										log.Debug("failed to backfill email in config", "error", saveErr)
+									}
+									break
+								}
+							}
+						}
+					}
+				}
+
+				break
+			}
+		} else {
+			return nil, err
 		}
-		return nil, err
 	}
 
 	return auth, nil
