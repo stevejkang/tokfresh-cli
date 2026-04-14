@@ -62,13 +62,18 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		OriginalInstance config.Instance
 	}
 
-	var accessible []config.Instance
+	type upgradeTarget struct {
+		Instance config.Instance
+		Token    string
+	}
+
+	var accessible []upgradeTarget
 	var inaccessible []skippedInstance
 
 	for _, inst := range instances {
 		accountID := inst.CloudflareAccountID
 		if accountID == "" {
-			accessible = append(accessible, inst)
+			accessible = append(accessible, upgradeTarget{Instance: inst, Token: auth.Token})
 			continue
 		}
 		if checkErr := cloudflare.EnsureAccountAccess(auth.Token, accountID); checkErr != nil {
@@ -86,10 +91,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 				})
 			} else {
 				log.Warn("account access check failed", "worker", inst.Name, "error", checkErr)
-				accessible = append(accessible, inst)
+				accessible = append(accessible, upgradeTarget{Instance: inst, Token: auth.Token})
 			}
 		} else {
-			accessible = append(accessible, inst)
+			accessible = append(accessible, upgradeTarget{Instance: inst, Token: auth.Token})
 		}
 	}
 
@@ -178,17 +183,16 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 				stillInaccessible = append(stillInaccessible, g.Workers...)
 				continue
 			}
-			auth.Token = token
-			auth.Source = "wrangler"
+			groupToken := token
 
-			if accessErr := cloudflare.EnsureAccountAccess(auth.Token, g.AccountID); accessErr != nil {
+			if accessErr := cloudflare.EnsureAccountAccess(groupToken, g.AccountID); accessErr != nil {
 				log.Warn("account still inaccessible after re-auth", "account", g.AccountName, "error", accessErr)
 				stillInaccessible = append(stillInaccessible, g.Workers...)
 				continue
 			}
 
 			for _, w := range g.Workers {
-				accessible = append(accessible, w.OriginalInstance)
+				accessible = append(accessible, upgradeTarget{Instance: w.OriginalInstance, Token: groupToken})
 			}
 		}
 
@@ -205,7 +209,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		fmt.Println()
 		fmt.Printf("  %s\n", ui.BoldStyle.Render(fmt.Sprintf("Upgrading workers to TokFresh %s template...", Version)))
 
-		for _, inst := range accessible {
+		for _, target := range accessible {
+			inst := target.Instance
 			fmt.Printf("\n  %s\n", inst.Name)
 
 			accountID := inst.CloudflareAccountID
@@ -218,7 +223,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			}
 
 			kvTitle := fmt.Sprintf("tokfresh-tokens-%s", inst.Name)
-			nsID, findErr := cloudflare.FindKV(accountID, auth.Token, kvTitle)
+			nsID, findErr := cloudflare.FindKV(accountID, target.Token, kvTitle)
 			if findErr != nil {
 				fmt.Printf("    %s KV namespace not found: %v\n", ui.ErrorStyle.Render("✗"), findErr)
 				failed++
@@ -226,7 +231,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			}
 			log.Debug("found KV namespace", "title", kvTitle, "id", nsID)
 
-			if uploadErr := cloudflare.UploadWorker(accountID, auth.Token, inst.Name, workerCode, nsID); uploadErr != nil {
+			if uploadErr := cloudflare.UploadWorker(accountID, target.Token, inst.Name, workerCode, nsID); uploadErr != nil {
 				fmt.Printf("    %s Upload failed: %v\n", ui.ErrorStyle.Render("✗"), uploadErr)
 				failed++
 				continue
