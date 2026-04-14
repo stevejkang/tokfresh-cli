@@ -192,16 +192,60 @@ func instanceNotFoundError(name string) error {
 }
 
 func resolveCloudflareAuthAuto() (*cloudflare.AuthResult, error) {
-	if result := cloudflare.ResolveFromEnv(); result != nil {
-		return result, nil
-	}
+	state := cloudflare.DetectAuthState()
+	log.Debug("detected cloudflare auth state", "state", state)
 
-	if cloudflare.IsWranglerInstalled() {
-		if token, err := cloudflare.GetWranglerToken(); err == nil {
+	switch state {
+	case cloudflare.AuthFromEnv:
+		result := cloudflare.ResolveFromEnv()
+		if result == nil {
+			return nil, fmt.Errorf("CLOUDFLARE_API_TOKEN environment variable is not set")
+		}
+		return result, nil
+
+	case cloudflare.AuthFromWrangler:
+		token, err := cloudflare.GetWranglerToken()
+		if err != nil {
+			return nil, fmt.Errorf("wrangler token retrieval failed: %w", err)
+		}
+		return &cloudflare.AuthResult{Token: token, Source: "wrangler"}, nil
+
+	case cloudflare.AuthWranglerNeedsLogin:
+		var choice string
+		ui.ClearAndBrand()
+		selectForm := huh.NewForm(huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Cloudflare Authentication").
+				Description("Wrangler is installed but not logged in.").
+				Options(
+					huh.NewOption("Login with wrangler (recommended)", "wrangler-login"),
+					huh.NewOption("Enter API token manually", "manual"),
+				).
+				Value(&choice),
+		))
+		selectForm.WithTheme(ui.TokFreshTheme())
+		if err := selectForm.Run(); err != nil {
+			return nil, fmt.Errorf("auth selection cancelled: %w", err)
+		}
+
+		if choice == "wrangler-login" {
+			ui.ExitAltScreen()
+			fmt.Println(ui.MutedStyle.Render("  Opening browser for Cloudflare login..."))
+			if err := cloudflare.RunWranglerLogin(); err != nil {
+				ui.EnterAltScreen()
+				return nil, fmt.Errorf("wrangler login failed: %w", err)
+			}
+			ui.EnterAltScreen()
+			token, err := cloudflare.GetWranglerToken()
+			if err != nil {
+				return nil, fmt.Errorf("wrangler login succeeded but token retrieval failed: %w", err)
+			}
 			return &cloudflare.AuthResult{Token: token, Source: "wrangler"}, nil
 		}
+		// choice == "manual": fall through to manual token input below
 	}
 
+	// Manual token input (for AuthWranglerMissing or manual choice)
 	var token string
 	ui.ClearAndBrand()
 	tokenForm := huh.NewForm(huh.NewGroup(
@@ -250,6 +294,12 @@ func ensureAuthForInstance(inst *config.Instance) (*cloudflare.AuthResult, error
 
 			if auth.Source == "env" {
 				fmt.Println(ui.MutedStyle.Render("  Set CLOUDFLARE_API_TOKEN to a token for that account and try again."))
+				fmt.Println()
+				return nil, fmt.Errorf("account access denied for '%s'", accountLabel)
+			}
+
+			if !cloudflare.IsWranglerInstalled() {
+				fmt.Println(ui.MutedStyle.Render("  Provide a token with access to that account."))
 				fmt.Println()
 				return nil, fmt.Errorf("account access denied for '%s'", accountLabel)
 			}
