@@ -98,7 +98,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(inaccessible) > 0 && auth.Source != "env" {
+	if len(inaccessible) > 0 && auth.Source != "env" && cloudflare.IsWranglerInstalled() {
 		type accountGroup struct {
 			AccountID   string
 			AccountName string
