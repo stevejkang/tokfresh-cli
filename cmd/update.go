@@ -191,7 +191,7 @@ func instanceNotFoundError(name string) error {
 	return fmt.Errorf("instance %q not found. Available instances:\n  %s", name, strings.Join(names, "\n  "))
 }
 
-func resolveCloudflareAuthAuto() (*cloudflare.AuthResult, error) {
+func resolveCloudflareAuthAuto(targetAccount ...string) (*cloudflare.AuthResult, error) {
 	state := cloudflare.DetectAuthState()
 	log.Debug("detected cloudflare auth state", "state", state)
 
@@ -213,10 +213,14 @@ func resolveCloudflareAuthAuto() (*cloudflare.AuthResult, error) {
 	case cloudflare.AuthWranglerNeedsLogin:
 		var choice string
 		ui.ClearAndBrand()
+		desc := "Wrangler is installed but not logged in."
+		if len(targetAccount) > 0 && targetAccount[0] != "" {
+			desc = fmt.Sprintf("This worker requires account: %s", targetAccount[0])
+		}
 		selectForm := huh.NewForm(huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Cloudflare Authentication").
-				Description("Wrangler is installed but not logged in.").
+				Description(desc).
 				Options(
 					huh.NewOption("Login with wrangler (recommended)", "wrangler-login"),
 					huh.NewOption("Enter API token manually", "manual"),
@@ -266,7 +270,18 @@ func resolveCloudflareAuthAuto() (*cloudflare.AuthResult, error) {
 }
 
 func ensureAuthForInstance(inst *config.Instance) (*cloudflare.AuthResult, error) {
-	auth, err := resolveCloudflareAuthAuto()
+	targetAccount := ""
+	if inst.CloudflareAccountName != "" || inst.CloudflareAccountID != "" {
+		targetAccount = inst.CloudflareAccountName
+		if targetAccount == "" {
+			targetAccount = inst.CloudflareAccountID
+		}
+		if inst.CloudflareEmail != "" {
+			targetAccount += " (" + inst.CloudflareEmail + ")"
+		}
+	}
+
+	auth, err := resolveCloudflareAuthAuto(targetAccount)
 	if err != nil {
 		return nil, err
 	}
