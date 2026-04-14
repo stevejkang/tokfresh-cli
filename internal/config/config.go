@@ -34,6 +34,7 @@ type Instance struct {
 	Label                 string `json:"label,omitempty"`
 	CloudflareAccountID   string `json:"cloudflareAccountId"`
 	CloudflareAccountName string `json:"cloudflareAccountName,omitempty"`
+	CloudflareEmail       string `json:"cloudflareEmail,omitempty"`
 	Schedule              string `json:"schedule"`
 	Timezone              string `json:"timezone"`
 	CronExpression        string `json:"cronExpression"`

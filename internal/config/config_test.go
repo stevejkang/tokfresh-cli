@@ -237,6 +237,77 @@ func TestAtomicWrite(t *testing.T) {
 	_ = dir
 }
 
+func TestCloudflareEmailPersistence(t *testing.T) {
+	setupTestDir(t)
+
+	cfg := &config.Config{
+		Instances: []config.Instance{
+			{
+				Name:                "email-worker",
+				CloudflareAccountID: "acc123",
+				CloudflareEmail:     "user@example.com",
+				Schedule:            "06:00",
+				Timezone:            "UTC",
+				CronExpression:      "0 6,11,16,21 * * *",
+			},
+		},
+	}
+
+	if err := config.Save(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(loaded.Instances))
+	}
+	if loaded.Instances[0].CloudflareEmail != "user@example.com" {
+		t.Errorf("expected CloudflareEmail 'user@example.com', got %q", loaded.Instances[0].CloudflareEmail)
+	}
+}
+
+func TestCloudflareEmailBackwardCompatibility(t *testing.T) {
+	setupTestDir(t)
+
+	// Write a config JSON without the cloudflareEmail field (simulates old config)
+	rawJSON := `{
+		"instances": [
+			{
+				"name": "old-worker",
+				"cloudflareAccountId": "acc456",
+				"schedule": "08:00",
+				"timezone": "UTC",
+				"cronExpression": "0 8,13,18,23 * * *",
+				"createdAt": "2026-01-01T00:00:00Z",
+				"updatedAt": "2026-01-01T00:00:00Z"
+			}
+		]
+	}`
+	if err := os.MkdirAll(config.Dir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config.Path(), []byte(rawJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.Instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(loaded.Instances))
+	}
+	if loaded.Instances[0].CloudflareEmail != "" {
+		t.Errorf("expected empty CloudflareEmail for old config, got %q", loaded.Instances[0].CloudflareEmail)
+	}
+	if loaded.Instances[0].Name != "old-worker" {
+		t.Errorf("expected name 'old-worker', got %q", loaded.Instances[0].Name)
+	}
+}
+
 func TestDefaultAccountIDSetOnFirstInstance(t *testing.T) {
 	setupTestDir(t)
 
