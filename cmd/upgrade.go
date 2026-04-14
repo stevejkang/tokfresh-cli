@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
 	"github.com/spf13/cobra"
 	"github.com/stevejkang/tokfresh-cli/internal/cloudflare"
@@ -47,9 +48,18 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	var verifyResult *cloudflare.VerifyResult
+	verifyResult, err = cloudflare.VerifyToken(auth.Token)
+	if err != nil {
+		log.Debug("token verify for email backfill failed", "error", err)
+	}
+
 	type skippedInstance struct {
-		Name        string
-		AccountName string
+		Name             string
+		AccountID        string
+		AccountName      string
+		CloudflareEmail  string
+		OriginalInstance config.Instance
 	}
 
 	var accessible []config.Instance
@@ -67,7 +77,13 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 				if label == "" {
 					label = accountID
 				}
-				inaccessible = append(inaccessible, skippedInstance{Name: inst.Name, AccountName: label})
+				inaccessible = append(inaccessible, skippedInstance{
+					Name:             inst.Name,
+					AccountID:        accountID,
+					AccountName:      label,
+					CloudflareEmail:  inst.CloudflareEmail,
+					OriginalInstance: inst,
+				})
 			} else {
 				log.Warn("account access check failed", "worker", inst.Name, "error", checkErr)
 				accessible = append(accessible, inst)
@@ -76,6 +92,110 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			accessible = append(accessible, inst)
 		}
 	}
+
+	if len(inaccessible) > 0 && auth.Source != "env" {
+		type accountGroup struct {
+			AccountID   string
+			AccountName string
+			Email       string
+			Workers     []skippedInstance
+		}
+		groupOrder := []string{}
+		groups := map[string]*accountGroup{}
+		for _, s := range inaccessible {
+			g, exists := groups[s.AccountID]
+			if !exists {
+				g = &accountGroup{
+					AccountID:   s.AccountID,
+					AccountName: s.AccountName,
+					Email:       s.CloudflareEmail,
+				}
+				groups[s.AccountID] = g
+				groupOrder = append(groupOrder, s.AccountID)
+			}
+			g.Workers = append(g.Workers, s)
+			if g.Email == "" && s.CloudflareEmail != "" {
+				g.Email = s.CloudflareEmail
+			}
+		}
+
+		var stillInaccessible []skippedInstance
+
+		for _, acctID := range groupOrder {
+			g := groups[acctID]
+
+			acctLabel := g.AccountName
+			if g.Email != "" {
+				acctLabel += " (" + g.Email + ")"
+			}
+
+			fmt.Println()
+			fmt.Printf("  %s\n", ui.ErrorStyle.Render("⚠ Cannot access account: "+acctLabel))
+			fmt.Println("  Workers needing this account:")
+			for _, w := range g.Workers {
+				fmt.Printf("    • %s\n", w.Name)
+			}
+
+			confirmSwitch := false
+			switchForm := huh.NewForm(huh.NewGroup(
+				huh.NewConfirm().
+					Title(fmt.Sprintf("Switch to account '%s' now?", acctLabel)).
+					Affirmative("Yes").
+					Negative("Skip").
+					Value(&confirmSwitch),
+			))
+			switchForm.WithTheme(ui.TokFreshTheme())
+			if formErr := switchForm.Run(); formErr != nil {
+				log.Debug("re-auth prompt cancelled", "account", acctLabel, "error", formErr)
+				stillInaccessible = append(stillInaccessible, g.Workers...)
+				continue
+			}
+
+			if !confirmSwitch {
+				stillInaccessible = append(stillInaccessible, g.Workers...)
+				continue
+			}
+
+			ui.ExitAltScreen()
+			fmt.Println(ui.MutedStyle.Render("  Switching Cloudflare account..."))
+			fmt.Println()
+			if logoutErr := cloudflare.RunWranglerLogout(); logoutErr != nil {
+				log.Debug("wrangler logout failed (may not have been logged in)", "error", logoutErr)
+			}
+			fmt.Println()
+			fmt.Println(ui.MutedStyle.Render("  Opening browser for Cloudflare login..."))
+			if loginErr := cloudflare.RunWranglerLogin(); loginErr != nil {
+				ui.EnterAltScreen()
+				log.Warn("wrangler login failed", "error", loginErr)
+				stillInaccessible = append(stillInaccessible, g.Workers...)
+				continue
+			}
+			ui.EnterAltScreen()
+
+			token, tokenErr := cloudflare.GetWranglerToken()
+			if tokenErr != nil {
+				log.Warn("wrangler token retrieval failed after re-auth", "error", tokenErr)
+				stillInaccessible = append(stillInaccessible, g.Workers...)
+				continue
+			}
+			auth.Token = token
+			auth.Source = "wrangler"
+
+			if accessErr := cloudflare.EnsureAccountAccess(auth.Token, g.AccountID); accessErr != nil {
+				log.Warn("account still inaccessible after re-auth", "account", g.AccountName, "error", accessErr)
+				stillInaccessible = append(stillInaccessible, g.Workers...)
+				continue
+			}
+
+			for _, w := range g.Workers {
+				accessible = append(accessible, w.OriginalInstance)
+			}
+		}
+
+		inaccessible = stillInaccessible
+	}
+
+	var emailsBackfilled []string
 
 	workerCode := cloudflare.GenerateWorkerCode()
 	upgraded := 0
@@ -91,6 +211,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			accountID := inst.CloudflareAccountID
 			if accountID == "" {
 				accountID = auth.AccountID
+			}
+
+			if verifyResult != nil && inst.CloudflareEmail == "" && inst.CloudflareAccountID == verifyResult.AccountID {
+				emailsBackfilled = append(emailsBackfilled, inst.Name)
 			}
 
 			kvTitle := fmt.Sprintf("tokfresh-tokens-%s", inst.Name)
@@ -110,6 +234,30 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			fmt.Printf("    %s Worker code updated\n", ui.SuccessStyle.Render("✓"))
 			fmt.Printf("    %s Cron schedule unchanged\n", ui.SuccessStyle.Render("✓"))
 			upgraded++
+		}
+	}
+
+	if len(emailsBackfilled) > 0 && verifyResult != nil {
+		cfg, loadErr := config.Load()
+		if loadErr != nil {
+			log.Warn("failed to load config for email backfill", "error", loadErr)
+		} else {
+			updated := false
+			for i := range cfg.Instances {
+				for _, name := range emailsBackfilled {
+					if cfg.Instances[i].Name == name && cfg.Instances[i].CloudflareEmail == "" {
+						cfg.Instances[i].CloudflareEmail = verifyResult.Email
+						updated = true
+					}
+				}
+			}
+			if updated {
+				if saveErr := config.Save(cfg); saveErr != nil {
+					log.Warn("failed to save email backfill", "error", saveErr)
+				} else {
+					log.Debug("backfilled email for instances", "count", len(emailsBackfilled))
+				}
+			}
 		}
 	}
 
@@ -136,6 +284,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			fmt.Println(ui.MutedStyle.Render("    wrangler login && tokfresh upgrade"))
 		case "env":
 			fmt.Println(ui.MutedStyle.Render("  Set CLOUDFLARE_API_TOKEN to a token for that account and run `tokfresh upgrade` again."))
+		default:
+			fmt.Println(ui.MutedStyle.Render("  Provide a token with access to that account."))
 		}
 		fmt.Println()
 	}
