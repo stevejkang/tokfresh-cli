@@ -412,6 +412,33 @@ func DeleteWorker(accountID, token, workerName string) error {
 	}
 }
 
+// DeleteKV deletes a KV namespace.
+func DeleteKV(accountID, token, namespaceID string) error {
+	url := fmt.Sprintf("%s/accounts/%s/storage/kv/namespaces/%s", cfAPIBase, accountID, namespaceID)
+
+	log.Debug("deleting KV namespace", "url", url)
+	start := time.Now()
+	resp, err := doRequest("DELETE", url, token, nil)
+	if err != nil {
+		return fmt.Errorf("KV delete request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	log.Debug("KV delete response", "status", resp.StatusCode, "elapsed", time.Since(start))
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		return nil
+	case http.StatusForbidden, http.StatusUnauthorized:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("%w: %s", ErrUnauthorized, string(body))
+	default:
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("KV delete failed (%d): %s", resp.StatusCode, string(body))
+	}
+}
+
 // parseCFErrorCode extracts the first error code from a CF API error response.
 // CF error responses: {"success":false,"errors":[{"code":10063,"message":"..."}]}
 func parseCFErrorCode(body []byte) int {

@@ -585,3 +585,43 @@ func TestDeleteWorker_Forbidden_ReturnsUnauthorized(t *testing.T) {
 		t.Errorf("expected ErrUnauthorized, got: %v", err)
 	}
 }
+
+func TestDeleteKV(t *testing.T) {
+	t.Run("success", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != "DELETE" {
+				t.Errorf("expected DELETE, got %s", r.Method)
+			}
+			if !strings.Contains(r.URL.Path, "/storage/kv/namespaces/ns-123") {
+				t.Errorf("wrong path: %s", r.URL.Path)
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		origBase := cfAPIBase
+		cfAPIBase = server.URL
+		defer func() { cfAPIBase = origBase }()
+
+		err := DeleteKV("acc", "tok", "ns-123")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("not found is not an error", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer server.Close()
+
+		origBase := cfAPIBase
+		cfAPIBase = server.URL
+		defer func() { cfAPIBase = origBase }()
+
+		err := DeleteKV("acc", "tok", "ns-missing")
+		if err != nil {
+			t.Fatalf("expected nil for 404, got: %v", err)
+		}
+	})
+}

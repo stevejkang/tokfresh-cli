@@ -57,7 +57,19 @@ func runRemove(cmd *cobra.Command, args []string) error {
 	cfDeleteOK := false
 	if authErr == nil {
 		deleteErr := ui.RunWithSpinnerFullscreen("Deleting worker from Cloudflare...", func() error {
-			return cloudflare.DeleteWorker(auth.AccountID, auth.Token, name)
+			if err := cloudflare.DeleteWorker(auth.AccountID, auth.Token, name); err != nil {
+				return err
+			}
+			kvTitle := fmt.Sprintf("tokfresh-tokens-%s", name)
+			nsID, findErr := cloudflare.FindKV(auth.AccountID, auth.Token, kvTitle)
+			if findErr != nil {
+				log.Debug("KV namespace not found, skipping deletion", "title", kvTitle)
+				return nil
+			}
+			if delErr := cloudflare.DeleteKV(auth.AccountID, auth.Token, nsID); delErr != nil {
+				log.Warn("failed to delete KV namespace", "title", kvTitle, "error", delErr)
+			}
+			return nil
 		})
 		if deleteErr != nil {
 			log.Warn("failed to delete worker from Cloudflare", "error", deleteErr)
