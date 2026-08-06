@@ -112,4 +112,14 @@ func TestGenerateWorkerCode(t *testing.T) {
 	if !strings.HasPrefix(code, "export default {") {
 		t.Error("template must start with 'export default {' (anchor invariant)")
 	}
+
+	// Anonymous metrics ping — exactly two occurrences (success + failure paths)
+	if strings.Count(code, "/api/ping") != 2 {
+		t.Errorf("expected exactly 2 occurrences of /api/ping, got %d", strings.Count(code, "/api/ping"))
+	}
+
+	// Both pings must be fire-and-forget (wrapped in try/catch)
+	if strings.Count(code, "try { await fetch(TOKFRESH_BASE + '/api/ping', { method: 'POST' }); } catch {}") != 2 {
+		t.Errorf("expected exactly 2 fire-and-forget ping lines, got %d", strings.Count(code, "try { await fetch(TOKFRESH_BASE + '/api/ping', { method: 'POST' }); } catch {}"))
+	}
 }
