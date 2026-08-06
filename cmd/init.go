@@ -215,6 +215,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+const prefilledTokenURL = "https://dash.cloudflare.com/profile/api-tokens?permissionGroupKeys=%5B%7B%22key%22%3A%22workers_scripts%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22workers_kv_storage%22%2C%22type%22%3A%22edit%22%7D%2C%7B%22key%22%3A%22account_settings%22%2C%22type%22%3A%22read%22%7D%5D&name=TokFresh"
+
 func resolveCloudflareAuth(mode string) (*cloudflare.AuthResult, error) {
 	switch mode {
 	case "env":
@@ -268,10 +270,13 @@ func resolveCloudflareAuth(mode string) (*cloudflare.AuthResult, error) {
 	case "manual":
 		var token string
 		ui.ClearAndBrand()
+		fmt.Println("  " + ui.MutedStyle.Render("Create a pre-configured token (permissions pre-filled, Cmd+Click):"))
+		fmt.Println()
+		fmt.Printf("  %s\n\n", prefilledTokenURL)
 		tokenForm := huh.NewForm(huh.NewGroup(
 			huh.NewInput().
 				Title("Cloudflare API Token").
-				Description("Create at: https://dash.cloudflare.com/profile/api-tokens").
+				Description("Paste the API token created from the URL above").
 				EchoMode(huh.EchoModePassword).
 				Value(&token),
 		))
