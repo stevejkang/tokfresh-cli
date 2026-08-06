@@ -68,4 +68,36 @@ func TestGenerateWorkerCode(t *testing.T) {
 	if !strings.Contains(code, "export default") {
 		t.Error("missing ES module export")
 	}
+
+	// Check for dynamic model fetching
+	if !strings.Contains(code, "TOKFRESH_BASE = 'https://tokfresh.com'") {
+		t.Error("missing TOKFRESH_BASE constant")
+	}
+
+	if !strings.Contains(code, "/api/config/model") {
+		t.Error("missing model config endpoint")
+	}
+
+	if !strings.Contains(code, "claude-haiku-4-5-20251001") {
+		t.Error("missing fallback model constant")
+	}
+
+	if !strings.Contains(code, "'cc_version=2.1.80.' + model") {
+		t.Error("missing dynamic billing header")
+	}
+
+	// Ensure hardcoded model is removed
+	if strings.Contains(code, "claude-sonnet-4-20250514") {
+		t.Error("hardcoded claude-sonnet-4-20250514 must be removed")
+	}
+
+	// Interpolation guard — PERMANENT, must never be removed
+	if strings.Contains(code, "${") {
+		t.Error("template must not contain ${ interpolation (Go raw string safety)")
+	}
+
+	// Anchor invariant — GenerateTestWorkerCode relies on this prefix
+	if !strings.HasPrefix(code, "export default {") {
+		t.Error("template must start with 'export default {' (anchor invariant)")
+	}
 }
