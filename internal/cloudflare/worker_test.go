@@ -82,8 +82,20 @@ func TestGenerateWorkerCode(t *testing.T) {
 		t.Error("missing fallback model constant")
 	}
 
-	if !strings.Contains(code, "'cc_version=2.1.80.' + model") {
+	if !strings.Contains(code, "/api/config/headers") {
+		t.Error("missing headers config endpoint")
+	}
+
+	if !strings.Contains(code, "dynamicHeaders['anthropic-beta']") {
+		t.Error("missing dynamic anthropic-beta header")
+	}
+
+	if !strings.Contains(code, "dynamicHeaders['x-anthropic-billing-header']") {
 		t.Error("missing dynamic billing header")
+	}
+
+	if !strings.Contains(code, "cc_version=2.1.80.claude-haiku-4-5-20251001") {
+		t.Error("missing fallback billing header value in FALLBACK_HEADERS")
 	}
 
 	// Ensure hardcoded model is removed
