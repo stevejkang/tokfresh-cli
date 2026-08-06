@@ -146,6 +146,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 			CronExpression:     cronExpr,
 			Timezone:           result.Timezone,
 			NotificationConfig: notifConfig,
+			EnableLogs:         result.EnableLogs,
+			EnableTraces:       result.EnableTraces,
 			OnProgress: func(step string) {
 				log.Info(step)
 			},

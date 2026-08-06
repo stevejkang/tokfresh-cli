@@ -266,7 +266,7 @@ func WriteKVValue(accountID, token, nsID, key, value string) error {
 // This is the most complex CF API call — uses multipart/form-data with:
 //   - Part 1: "worker.js" with Content-Type: application/javascript+module
 //   - Part 2: "metadata" with Content-Type: application/json (bindings, main_module, etc.)
-func UploadWorker(accountID, token, workerName, code, kvNSID string) error {
+func UploadWorker(accountID, token, workerName, code, kvNSID string, enableLogs, enableTraces bool) error {
 	url := fmt.Sprintf("%s/accounts/%s/workers/scripts/%s", cfAPIBase, accountID, workerName)
 
 	var buf bytes.Buffer
@@ -293,6 +293,16 @@ func UploadWorker(accountID, token, workerName, code, kvNSID string) error {
 			"name":         "TOKEN_STORE",
 			"namespace_id": kvNSID,
 		}},
+	}
+	if enableLogs || enableTraces {
+		obs := map[string]interface{}{"enabled": true}
+		if enableLogs {
+			obs["logs"] = map[string]interface{}{"enabled": true, "invocation_logs": true}
+		}
+		if enableTraces {
+			obs["traces"] = map[string]interface{}{"enabled": true}
+		}
+		metadata["observability"] = obs
 	}
 	metaJSON, _ := json.Marshal(metadata)
 	metaHeader := textproto.MIMEHeader{}

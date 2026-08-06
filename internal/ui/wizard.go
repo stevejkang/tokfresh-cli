@@ -22,6 +22,8 @@ type WizardResult struct {
 	NotifyOnFailureOnly bool
 	CloudflareAuthMode  string
 	CloudflareAPIToken  string
+	EnableLogs          bool
+	EnableTraces        bool
 }
 
 func (r *WizardResult) BuildNotificationConfig() string {
@@ -176,6 +178,7 @@ func RunSetupWizard(detectedTimezone, authURL string) (*WizardResult, error) {
 	result.NotificationType = "none"
 
 	var notifyMode string
+	var observabilityChoices []string
 
 	authState := cloudflare.DetectAuthState()
 	cfAuthChoices := buildCFAuthChoices(authState)
@@ -258,6 +261,17 @@ func RunSetupWizard(detectedTimezone, authURL string) (*WizardResult, error) {
 		}),
 
 		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Observability").
+				Description("Enables log and trace collection via Cloudflare's observability settings. With at most 4 executions per day, usage stays well within the free tier (200K events/day).").
+				Options(
+					huh.NewOption("Workers Logs", "logs").Selected(true),
+					huh.NewOption("Workers Traces", "traces").Selected(true),
+				).
+				Value(&observabilityChoices),
+		),
+
+		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Cloudflare authentication").
 				Description("How to authenticate with your Cloudflare account").
@@ -275,6 +289,15 @@ func RunSetupWizard(detectedTimezone, authURL string) (*WizardResult, error) {
 	}
 
 	result.NotifyOnFailureOnly = notifyMode == "failure"
+
+	for _, choice := range observabilityChoices {
+		switch choice {
+		case "logs":
+			result.EnableLogs = true
+		case "traces":
+			result.EnableTraces = true
+		}
+	}
 
 	if skipCFAuth {
 		if authState == cloudflare.AuthFromEnv {

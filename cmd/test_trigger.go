@@ -65,7 +65,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 	// Step 1: Deploy test-enabled worker
 	fmt.Println()
 	err = ui.RunWithSpinner("  Deploying test-enabled worker...", func() error {
-		return cloudflare.UploadWorker(accountID, auth.Token, name, testWorkerCode, nsID)
+		return cloudflare.UploadWorker(accountID, auth.Token, name, testWorkerCode, nsID, true, true)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to deploy test worker: %w", err)
@@ -96,7 +96,7 @@ func runTest(cmd *cobra.Command, args []string) error {
 	// Step 3: Restore production worker
 	productionCode := cloudflare.GenerateWorkerCode()
 	err = ui.RunWithSpinner("  Restoring production worker...", func() error {
-		return cloudflare.UploadWorker(accountID, auth.Token, name, productionCode, nsID)
+		return cloudflare.UploadWorker(accountID, auth.Token, name, productionCode, nsID, true, true)
 	})
 	if err != nil {
 		fmt.Println(ui.ErrorStyle.Render(fmt.Sprintf("  ⚠ Failed to restore production worker: %v", err)))

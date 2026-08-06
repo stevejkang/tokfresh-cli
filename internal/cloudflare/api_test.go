@@ -206,33 +206,112 @@ func TestWriteKVValue(t *testing.T) {
 }
 
 func TestUploadWorker_Multipart(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "PUT" {
-			t.Errorf("expected PUT, got %s", r.Method)
-		}
-		ct := r.Header.Get("Content-Type")
-		if !strings.Contains(ct, "multipart") {
-			t.Error("expected multipart content type")
-		}
+	t.Run("basic", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != "PUT" {
+				t.Errorf("expected PUT, got %s", r.Method)
+			}
+			ct := r.Header.Get("Content-Type")
+			if !strings.Contains(ct, "multipart") {
+				t.Error("expected multipart content type")
+			}
 
-		// Parse multipart to verify parts
-		err := r.ParseMultipartForm(1 << 20)
+			err := r.ParseMultipartForm(1 << 20)
+			if err != nil {
+				t.Fatalf("failed to parse multipart: %v", err)
+			}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		origBase := cfAPIBase
+		cfAPIBase = server.URL
+		defer func() { cfAPIBase = origBase }()
+
+		err := UploadWorker("acc", "tok", "test-worker", "export default {}", "kv123", false, false)
 		if err != nil {
-			t.Fatalf("failed to parse multipart: %v", err)
+			t.Fatal(err)
 		}
+	})
 
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
+	t.Run("observability enabled", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			err := r.ParseMultipartForm(1 << 20)
+			if err != nil {
+				t.Fatalf("failed to parse multipart: %v", err)
+			}
 
-	origBase := cfAPIBase
-	cfAPIBase = server.URL
-	defer func() { cfAPIBase = origBase }()
+			// metadata part is sent with filename="metadata", surfaces under File map
+			metaFiles := r.MultipartForm.File["metadata"]
+			if len(metaFiles) == 0 {
+				t.Fatal("metadata part not found in File map")
+			}
+			f, err := metaFiles[0].Open()
+			if err != nil {
+				t.Fatalf("failed to open metadata part: %v", err)
+			}
+			defer func() { _ = f.Close() }()
+			metaBody, _ := io.ReadAll(f)
+			metaStr := string(metaBody)
 
-	err := UploadWorker("acc", "tok", "test-worker", "export default {}", "kv123")
-	if err != nil {
-		t.Fatal(err)
-	}
+			if !strings.Contains(metaStr, "observability") {
+				t.Errorf("metadata should contain 'observability', got: %s", metaStr)
+			}
+			if !strings.Contains(metaStr, "invocation_logs") {
+				t.Errorf("metadata should contain 'invocation_logs', got: %s", metaStr)
+			}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		origBase := cfAPIBase
+		cfAPIBase = server.URL
+		defer func() { cfAPIBase = origBase }()
+
+		err := UploadWorker("acc", "tok", "test-worker", "export default {}", "kv123", true, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("observability disabled", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			err := r.ParseMultipartForm(1 << 20)
+			if err != nil {
+				t.Fatalf("failed to parse multipart: %v", err)
+			}
+
+			metaFiles := r.MultipartForm.File["metadata"]
+			if len(metaFiles) == 0 {
+				t.Fatal("metadata part not found in File map")
+			}
+			f, err := metaFiles[0].Open()
+			if err != nil {
+				t.Fatalf("failed to open metadata part: %v", err)
+			}
+			defer func() { _ = f.Close() }()
+			metaBody, _ := io.ReadAll(f)
+			metaStr := string(metaBody)
+
+			if strings.Contains(metaStr, "observability") {
+				t.Errorf("metadata should NOT contain 'observability' when disabled, got: %s", metaStr)
+			}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		origBase := cfAPIBase
+		cfAPIBase = server.URL
+		defer func() { cfAPIBase = origBase }()
+
+		err := UploadWorker("acc", "tok", "test-worker", "export default {}", "kv123", false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
 func TestUploadWorker_Error10063(t *testing.T) {
@@ -249,7 +328,7 @@ func TestUploadWorker_Error10063(t *testing.T) {
 	cfAPIBase = server.URL
 	defer func() { cfAPIBase = origBase }()
 
-	err := UploadWorker("acc", "tok", "worker", "code", "kv")
+	err := UploadWorker("acc", "tok", "worker", "code", "kv", false, false)
 	if err == nil {
 		t.Fatal("expected error")
 	}

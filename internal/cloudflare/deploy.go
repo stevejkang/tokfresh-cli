@@ -16,6 +16,8 @@ type DeployParams struct {
 	CronExpression     string
 	Timezone           string
 	NotificationConfig string // optional JSON: {"slackWebhook":"...","failureOnly":true}
+	EnableLogs         bool
+	EnableTraces       bool
 	OnProgress         func(step string)
 }
 
@@ -49,7 +51,7 @@ func Deploy(params DeployParams) error {
 
 	// 3. Upload worker with KV binding
 	progress("Deploying worker...")
-	if err := UploadWorker(params.AccountID, params.Token, params.WorkerName, params.WorkerCode, nsID); err != nil {
+	if err := UploadWorker(params.AccountID, params.Token, params.WorkerName, params.WorkerCode, nsID, params.EnableLogs, params.EnableTraces); err != nil {
 		return fmt.Errorf("worker upload failed: %w", err)
 	}
 

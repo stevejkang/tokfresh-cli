@@ -3,9 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/log"
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"github.com/stevejkang/tokfresh-cli/internal/cloudflare"
 	"github.com/stevejkang/tokfresh-cli/internal/config"
@@ -201,6 +203,37 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	var emailsBackfilled []string
 
+	enableLogs, enableTraces := true, true
+	if len(accessible) > 0 {
+		if auth.Source != "env" && isatty.IsTerminal(os.Stdin.Fd()) {
+			var obsChoices []string
+			obsForm := huh.NewForm(huh.NewGroup(
+				huh.NewMultiSelect[string]().
+					Title("Observability").
+					Description("Enables log and trace collection via Cloudflare's observability settings. With at most 4 executions per day, usage stays well within the free tier (200K events/day).").
+					Options(
+						huh.NewOption("Workers Logs", "logs").Selected(true),
+						huh.NewOption("Workers Traces", "traces").Selected(true),
+					).
+					Value(&obsChoices),
+			))
+			obsForm.WithTheme(ui.TokFreshTheme())
+			if err := obsForm.Run(); err != nil {
+				return fmt.Errorf("observability selection cancelled: %w", err)
+			}
+			enableLogs = false
+			enableTraces = false
+			for _, c := range obsChoices {
+				switch c {
+				case "logs":
+					enableLogs = true
+				case "traces":
+					enableTraces = true
+				}
+			}
+		}
+	}
+
 	workerCode := cloudflare.GenerateWorkerCode()
 	upgraded := 0
 	failed := 0
@@ -231,7 +264,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			}
 			log.Debug("found KV namespace", "title", kvTitle, "id", nsID)
 
-			if uploadErr := cloudflare.UploadWorker(accountID, target.Token, inst.Name, workerCode, nsID); uploadErr != nil {
+			if uploadErr := cloudflare.UploadWorker(accountID, target.Token, inst.Name, workerCode, nsID, enableLogs, enableTraces); uploadErr != nil {
 				fmt.Printf("    %s Upload failed: %v\n", ui.ErrorStyle.Render("✗"), uploadErr)
 				failed++
 				continue
