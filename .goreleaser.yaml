@@ -43,8 +43,8 @@ brews:
       name: homebrew-tap
       branch: main
     commit_author:
-      name: tokfresh-bot
-      email: bot@users.noreply.github.com
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
     test: |
       system "#{bin}/tokfresh", "version"
     skip_upload: auto
@@ -58,6 +58,9 @@ scoops:
       owner: stevejkang
       name: scoop-bucket
       branch: main
+    commit_author:
+      name: github-actions[bot]
+      email: 41898282+github-actions[bot]@users.noreply.github.com
     skip_upload: auto
 
 changelog:
