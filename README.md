@@ -9,8 +9,16 @@ Claude Pro/Max usage resets every 5 hours from your first API call. TokFresh dep
 ## Install
 ### Homebrew
 ```sh
-brew install stevejkang/tap/tokfresh
+brew install --cask stevejkang/tap/tokfresh
 ```
+
+> Upgrading from the old formula: `brew uninstall tokfresh && brew install --cask stevejkang/tap/tokfresh`
+
+### Install script (macOS / Linux)
+```sh
+curl -fsSL https://raw.githubusercontent.com/stevejkang/tokfresh-cli/main/install.sh | sh
+```
+`TOKFRESH_VERSION` pins a release, `INSTALL_DIR` changes the target (default `~/.local/bin`).
 
 ### Go
 ```sh
