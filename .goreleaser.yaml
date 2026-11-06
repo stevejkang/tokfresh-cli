@@ -9,6 +9,7 @@ builds:
       - CGO_ENABLED=0
     goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
+    flags: [-trimpath]
     ignore:
       - goos: windows
         goarch: arm64
@@ -32,22 +33,26 @@ archives:
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
 
-brews:
+homebrew_casks:
   - name: tokfresh
-    directory: Formula
-    homepage: "https://github.com/stevejkang/tokfresh-cli"
-    description: "Automate your Claude token reset timing via Cloudflare Workers"
-    license: MIT
     repository:
       owner: stevejkang
       name: homebrew-tap
       branch: main
+    homepage: "https://github.com/stevejkang/tokfresh-cli"
+    description: "Automate your Claude token reset timing via Cloudflare Workers"
+    license: MIT
     commit_author:
       name: github-actions[bot]
       email: 41898282+github-actions[bot]@users.noreply.github.com
-    test: |
-      system "#{bin}/tokfresh", "version"
-    skip_upload: auto
+    skip_upload: auto # prereleases (v1.0.0-rc1) do not update the tap
+    hooks:
+      post:
+        # The binary is not notarized; drop the quarantine flag so Gatekeeper lets it run.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/tokfresh"]
+          end
 
 scoops:
   - name: tokfresh
@@ -64,8 +69,10 @@ scoops:
     skip_upload: auto
 
 changelog:
+  use: github
   sort: asc
-  use: github-native
+  filters:
+    exclude: ["^docs:", "^test:", "^chore:"]
 
 release:
   prerelease: auto
